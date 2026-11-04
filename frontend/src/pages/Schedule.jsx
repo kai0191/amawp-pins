@@ -7,6 +7,30 @@ import { autoSchedule as planSchedule, PRESETS } from '../../../shared/scheduler
 import { ymd, zonedParts, zonedToUtc, addDaysYmd } from '../../../shared/tz.js';
 import { fmtDateTime, fmtTime, fmtDay, toLocalInput, fromLocalInput, relative } from '../lib/time.js';
 import { AccountBoardPicker } from './PublishDialog.jsx';
+import { DAILY_PIN_LIMIT } from '../../../shared/limits.js';
+import { renderDesign, jpegBase64, thumbnailDataUrl } from '../designer/render.js';
+import { brandKit } from '../lib/data.js';
+
+let renderingNow = false;
+/** Render AI-created template designs (from MCP) into real pin images. */
+async function renderPending(pins, onProgress) {
+  if (renderingNow) return 0;
+  renderingNow = true;
+  try {
+  const todo = pins.filter((p) => p.design_json);
+  let done = 0;
+  for (const p of todo) {
+    try {
+      const design = JSON.parse(p.design_json);
+      const c = document.createElement('canvas');
+      await renderDesign(c, design, { logo: brandKit().logo });
+      await api.setPinImage(p.id, { image: jpegBase64(c, 0.9), thumb: thumbnailDataUrl(c) });
+      done++; onProgress && onProgress(done, todo.length);
+    } catch (e) { console.warn('render failed', p.id, e); }
+  }
+  return done;
+  } finally { renderingNow = false; }
+}
 
 /** Auto-schedule settings form, used here and in Bulk mode. */
 export function AutoScheduleForm({ tz, accountId, defaultBoardId, onSubmit, busy, count, submitLabel, pinsForPreview }) {
@@ -52,8 +76,8 @@ export function AutoScheduleForm({ tz, accountId, defaultBoardId, onSubmit, busy
             <option value="custom">Custom hours</option>
           </select>
         </label>
-        <label class="field">Pins per day (min)<input type="number" min="1" max="25" value={minPerDay} onInput={(e) => setMin(e.target.value)} /></label>
-        <label class="field">Pins per day (max)<input type="number" min="1" max="25" value={maxPerDay} onInput={(e) => setMax(e.target.value)} /></label>
+        <label class="field">Pins per day (min)<input type="number" min="1" max={DAILY_PIN_LIMIT} value={minPerDay} onInput={(e) => setMin(e.target.value)} /></label>
+        <label class="field">Pins per day (max)<input type="number" min="1" max={DAILY_PIN_LIMIT} value={maxPerDay} onInput={(e) => setMax(e.target.value)} /></label>
       </div>
       {custom && (
         <div class="grid-3">
@@ -62,6 +86,7 @@ export function AutoScheduleForm({ tz, accountId, defaultBoardId, onSubmit, busy
           <label class="field">Start date<input type="date" value={startDate} onInput={(e) => setStartDate(e.target.value)} /></label>
         </div>
       )}
+      <p class="tiny faint" style={{ margin: 0 }}>Safety: max {DAILY_PIN_LIMIT} pins per account per day, never the same link twice in a day, random natural times.</p>
       {!custom && (
         <div class="grid-2">
           <label class="field">Start date<input type="date" value={startDate} onInput={(e) => setStartDate(e.target.value)} /></label>
@@ -231,7 +256,8 @@ function Calendar({ pins, tz, onOpen, onMove }) {
 
 export function Schedule({ query }) {
   const s = useStore();
-  const tz = userTz(s.user);
+  const tz = userTz();
+  const [rendering, setRendering] = useState(null);
   const [view, setView] = useState(query?.view || pref('scheduleView', 'calendar'));
   const [pins, setPins] = useState(null);
   const [log, setLog] = useState([]);
@@ -243,7 +269,14 @@ export function Schedule({ query }) {
   const [boardId, setBoardId] = useState(null);
 
   const load = async () => {
-    try { setPins(await api.pins()); } catch (e) { toast(e.message, 'error'); setPins([]); }
+    let list = [];
+    try { list = await api.pins(); setPins(list); } catch (e) { toast(e.message, 'error'); setPins([]); }
+    if (list.some((p) => p.design_json) && !renderingNow) {
+      setRendering({ done: 0, n: list.filter((p) => p.design_json).length });
+      const n = await renderPending(list, (done, total) => setRendering({ done, n: total }));
+      setRendering(null);
+      if (n) { toast(`${n} AI-designed pin${n > 1 ? 's' : ''} rendered ✓`, 'ok'); setPins(await api.pins()); }
+    }
     api.log().then(setLog).catch(() => {});
   };
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
@@ -298,6 +331,7 @@ export function Schedule({ query }) {
         </div>
       </div>
 
+      {rendering && <div class="notice row"><Spinner /> Rendering AI-designed pins: {rendering.done} / {rendering.n}</div>}
       {failed.length > 0 && (
         <div class="card stack" style={{ borderColor: 'var(--danger)' }}>
           <b>{failed.length} pin{failed.length > 1 ? 's' : ''} failed to post</b>

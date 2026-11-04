@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 
 // Tiny global store with a hook.
-const state = { mode: 'demo', health: null, user: null, ready: false, toasts: [], attempted: null };
+const state = { ready: false, relay: false, health: null, home: { mode: 'local' }, engineError: null, profile: {}, overview: {}, toasts: [] };
 const subs = new Set();
 
 export function getState() { return state; }
@@ -50,6 +50,6 @@ export function setPref(key, v) {
   try { localStorage.setItem(`tackly.pref.${key}`, JSON.stringify(v)); } catch { /* ignore */ }
 }
 
-export function userTz(user) {
-  return user?.settings?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+export function userTz() {
+  return state.profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }

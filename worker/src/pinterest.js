@@ -4,6 +4,11 @@ import { encKey } from './lib/secrets.js';
 import { HttpError } from './lib/http.js';
 
 export const SCOPES = ['boards:read', 'boards:write', 'pins:read', 'pins:write', 'user_accounts:read'];
+// Optional extra scopes (e.g. "ads:read" unlocks Pinterest's own keyword/trend data) via the PINTEREST_EXTRA_SCOPES var.
+export function scopes(env) {
+  const extra = String(env.PINTEREST_EXTRA_SCOPES || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return [...new Set([...SCOPES, ...extra])];
+}
 const OAUTH_URL = 'https://www.pinterest.com/oauth/';
 const TOKEN_URL = 'https://api.pinterest.com/v5/oauth/token';
 
@@ -26,7 +31,7 @@ export function authorizeUrl(env, redirect, state) {
     client_id: env.PINTEREST_APP_ID,
     redirect_uri: redirect,
     response_type: 'code',
-    scope: SCOPES.join(','),
+    scope: scopes(env).join(','),
     state,
   });
   return `${OAUTH_URL}?${p}`;
@@ -70,42 +75,50 @@ export async function pinterestFetch(env, token, path, init = {}) {
   return data;
 }
 
-/** Returns a valid access token for an account row, refreshing (and saving) when it is close to expiry. */
-export async function accessTokenFor(env, account, { force = false } = {}) {
-  const key = await encKey(env);
-  const soon = Date.now() + 24 * 3600 * 1000;
-  if (!force && (!account.access_expires_at || account.access_expires_at > soon)) {
-    return decryptString(account.access_token_enc, key);
+// ---- Sealed tokens ----
+// Pinterest tokens never get stored on AMAWP's Cloudflare. They are sealed (AES-GCM with ENC_KEY) and handed to
+// the user's own storage (their browser or their own engine). Only this relay can open them, so tokens issued to
+// the AMAWP Pinterest app can only be used through the relay, which enforces the daily safety limit.
+export async function seal(env, data) {
+  return encryptString(JSON.stringify({ v: 1, ...data }), await encKey(env));
+}
+export async function unseal(env, sealed) {
+  if (!sealed || typeof sealed !== 'string' || sealed.length > 8000) throw new HttpError(401, 'Pinterest connection missing. Please reconnect Pinterest.', 'NO_CONNECTION');
+  try {
+    const d = JSON.parse(await decryptString(sealed, await encKey(env)));
+    if (!d.a || !d.uid) throw new Error('bad');
+    return d;
+  } catch {
+    throw new HttpError(401, 'Pinterest connection is invalid or expired. Please reconnect Pinterest.', 'BAD_CONNECTION');
   }
-  if (!account.refresh_token_enc) return decryptString(account.access_token_enc, key);
-  const refresh = await decryptString(account.refresh_token_enc, key);
-  const t = await refreshToken(env, refresh);
-  const now = Date.now();
-  const update = {
-    access: await encryptString(t.access_token, key),
-    refresh: t.refresh_token ? await encryptString(t.refresh_token, key) : account.refresh_token_enc,
-    accessExp: t.expires_in ? now + t.expires_in * 1000 : null,
-    refreshExp: t.refresh_token_expires_in ? now + t.refresh_token_expires_in * 1000 : account.refresh_expires_at,
-  };
-  await env.DB.prepare(
-    `UPDATE pinterest_accounts SET access_token_enc=?, refresh_token_enc=?, access_expires_at=?, refresh_expires_at=?, status='active' WHERE id=?`,
-  ).bind(update.access, update.refresh, update.accessExp, update.refreshExp, account.id).run();
-  Object.assign(account, {
-    access_token_enc: update.access, refresh_token_enc: update.refresh,
-    access_expires_at: update.accessExp, refresh_expires_at: update.refreshExp,
-  });
-  return t.access_token;
 }
 
-/** Calls the API, refreshing the token once on 401. */
-export async function withAccount(env, account, fn) {
-  let token = await accessTokenFor(env, account);
+/** Opens a sealed connection, refreshing the access token when it is close to expiry. Returns {conn, sealed (new or null)}. */
+export async function openConnection(env, sealed, { force = false } = {}) {
+  const conn = await unseal(env, sealed);
+  const soon = Date.now() + 24 * 3600 * 1000;
+  if (!force && (!conn.ae || conn.ae > soon)) return { conn, sealed: null };
+  if (!conn.r) return { conn, sealed: null };
+  const t = await refreshToken(env, conn.r);
+  const now = Date.now();
+  const next = {
+    ...conn, a: t.access_token, r: t.refresh_token || conn.r,
+    ae: t.expires_in ? now + t.expires_in * 1000 : null,
+    re: t.refresh_token_expires_in ? now + t.refresh_token_expires_in * 1000 : conn.re,
+  };
+  delete next.v;
+  return { conn: next, sealed: await seal(env, next) };
+}
+
+/** Run fn(token) with a sealed connection, refreshing once on 401. Returns {result, conn, sealed}. */
+export async function withSealed(env, sealed, fn) {
+  let { conn, sealed: newSealed } = await openConnection(env, sealed);
   try {
-    return await fn(token);
+    return { result: await fn(conn.a), conn, sealed: newSealed };
   } catch (e) {
-    if (e.status === 401 && account.refresh_token_enc) {
-      token = await accessTokenFor(env, account, { force: true });
-      return fn(token);
+    if (e.status === 401 && conn.r) {
+      ({ conn, sealed: newSealed } = await openConnection(env, newSealed || sealed, { force: true }));
+      return { result: await fn(conn.a), conn, sealed: newSealed };
     }
     throw e;
   }
@@ -132,10 +145,12 @@ export function createBoard(env, token, { name, description, privacy = 'PUBLIC' 
   });
 }
 
-export function createPin(env, token, { boardId, title, description, link, altText, imageBase64, contentType = 'image/jpeg' }) {
+export function createPin(env, token, { boardId, title, description, link, altText, imageBase64, imageUrl, contentType = 'image/jpeg' }) {
   const body = {
     board_id: boardId,
-    media_source: { source_type: 'image_base64', content_type: contentType, data: imageBase64 },
+    media_source: imageBase64
+      ? { source_type: 'image_base64', content_type: contentType, data: imageBase64 }
+      : { source_type: 'image_url', url: imageUrl },
   };
   if (title) body.title = title.slice(0, 100);
   if (description) body.description = description.slice(0, 800);
@@ -150,6 +165,16 @@ export function pinAnalytics(env, token, pinId, startDate, endDate) {
     metric_types: 'IMPRESSION,SAVE,PIN_CLICK,OUTBOUND_CLICK',
   });
   return pinterestFetch(env, token, `/pins/${encodeURIComponent(pinId)}/analytics?${q}`);
+}
+
+export function suggestedTerms(env, token, term) {
+  return pinterestFetch(env, token, `/terms/suggested?term=${encodeURIComponent(term)}&limit=10`);
+}
+export function relatedTerms(env, token, term) {
+  return pinterestFetch(env, token, `/terms/related?terms=${encodeURIComponent(term)}`);
+}
+export function trendingKeywords(env, token, region = 'US', type = 'growing') {
+  return pinterestFetch(env, token, `/trends/keywords/${encodeURIComponent(region)}/top/${encodeURIComponent(type)}?limit=50`);
 }
 
 export function userAccount(env, token) {

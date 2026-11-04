@@ -1,0 +1,23 @@
+# Tackly engine: runs on YOUR OWN free Cloudflare account and keeps your pins in your own storage.
+# Deploy with the "Deploy to Cloudflare" button in the Tackly app (Settings > Data home), or `npm run deploy`.
+# D1 and KV are created automatically on first deploy. The only secret is ENGINE_KEY (you choose it).
+name = "tackly-engine"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+workers_dev = true
+
+[vars]
+# Optional. Leave empty: the Tackly app saves the relay address automatically when you connect.
+RELAY_URL = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tackly-engine-db"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+
+[triggers]
+# Checks for due pins every 5 minutes (uses 1 of your 5 free cron triggers).
+crons = ["*/5 * * * *"]

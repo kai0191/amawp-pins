@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Icon, Spinner, Modal } from '../components.jsx';
+import { Icon, Spinner } from '../components.jsx';
 import { api } from '../lib/api.js';
-import { useStore, toast, pref, setPref, navigate } from '../lib/store.js';
+import { toast, pref, setPref, navigate } from '../lib/store.js';
 import { brandKit } from '../lib/data.js';
 import { TEMPLATES, CATEGORIES, FIELD_LABELS, templateById, newDesign, switchTemplate } from '../designer/templates.js';
 import { PALETTES, FONT_PAIRS } from '../designer/styles.js';
 import { renderDesign, drawDesign, ensureFonts, canvasToBlob, thumbnailDataUrl, jpegBase64 } from '../designer/render.js';
-import { canUseTemplate, WAITLIST_FEATURES } from '../../../shared/plans.js';
 import { PublishDialog } from './PublishDialog.jsx';
 import { ImagePicker } from './ImagePicker.jsx';
 
@@ -22,7 +21,7 @@ export function applyBrand(design, brand) {
   return d;
 }
 
-function TemplateThumb({ tpl, design, active, locked, onClick }) {
+function TemplateThumb({ tpl, design, active, onClick }) {
   const ref = useRef();
   useEffect(() => {
     const d = { ...switchTemplate(design, tpl.id), images: [], showPlaceholderHint: false };
@@ -31,33 +30,12 @@ function TemplateThumb({ tpl, design, active, locked, onClick }) {
   return (
     <button type="button" class={`tpl ${active ? 'active' : ''}`} onClick={onClick} aria-label={`Template: ${tpl.name}`} data-template={tpl.id}>
       <canvas ref={ref} width="1000" height="1500" />
-      {tpl.tier === 'pro' && <span class="badge-pro">PRO</span>}
-      <span class="tname">{locked ? '🔒 ' : ''}{tpl.name}</span>
+      <span class="tname">{tpl.name}</span>
     </button>
   );
 }
 
-function ProModal({ tpl, onClose }) {
-  const s = useStore();
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal title={`${tpl.name} is a Pro template`} onClose={onClose}
-      footer={<>
-        <button class="btn ghost" onClick={onClose}>Keep designing free</button>
-        <button class="btn primary" disabled={busy} onClick={async () => {
-          setBusy(true);
-          try { await api.waitlist({ features: ['premium_templates'], email: s.user?.email }); toast('You’re on the waitlist. We’ll let you know! 🎉', 'ok'); onClose(); }
-          catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
-        }}>{busy ? <Spinner /> : 'Join the Pro waitlist'}</button>
-      </>}>
-      <p class="muted">Pro templates are coming with our paid plan. You can preview this design now. Join the waitlist and we’ll tell you when it launches. Paid plans will only launch if enough people ask, so your vote counts.</p>
-      <p class="small faint">Interested features: {WAITLIST_FEATURES.slice(0, 3).map((f) => f.label).join(', ')}.</p>
-    </Modal>
-  );
-}
-
 export function Designer({ query }) {
-  const s = useStore();
   const brand = brandKit();
   const [design, setDesign] = useState(() => {
     const saved = pref('designDraft', null);
@@ -68,14 +46,11 @@ export function Designer({ query }) {
   const [tab, setTab] = useState('text');
   const [slot, setSlot] = useState(0);
   const [publishing, setPublishing] = useState(false);
-  const [proTpl, setProTpl] = useState(null);
   const [aiBusy, setAiBusy] = useState('');
   const [ideas, setIdeas] = useState([]);
   const [rendering, setRendering] = useState(false);
   const canvasRef = useRef();
   const tpl = templateById(design.templateId);
-  const plan = s.user?.plan || { premiumTemplates: false };
-  const locked = !canUseTemplate(plan, tpl);
 
   // persist + render (debounced)
   useEffect(() => {
@@ -101,11 +76,9 @@ export function Designer({ query }) {
   function chooseTemplate(t) {
     setDesign((d) => switchTemplate(d, t.id));
     setSlot(0);
-    if (!canUseTemplate(plan, t)) setProTpl(t);
   }
 
   async function download() {
-    if (locked) { setProTpl(tpl); return; }
     await renderDesign(canvasRef.current, design, { logo: brand.logo });
     try {
       const blob = await canvasToBlob(canvasRef.current, 'image/png');
@@ -161,7 +134,7 @@ export function Designer({ query }) {
         <div class="tpl-grid">
           {list.map((t) => (
             <TemplateThumb key={t.id} tpl={t} design={design} active={t.id === design.templateId}
-              locked={!canUseTemplate(plan, t)} onClick={() => chooseTemplate(t)} />
+              onClick={() => chooseTemplate(t)} />
           ))}
         </div>
       </section>
@@ -171,11 +144,10 @@ export function Designer({ query }) {
         <div class="stage-canvas"><canvas ref={canvasRef} width="1000" height="1500" data-testid="pin-canvas" /></div>
         <div class="row" style={{ justifyContent: 'center' }}>
           <span class="chip">{tpl.name}{rendering ? ' · rendering…' : ''}</span>
-          {locked && <span class="chip warn">Pro preview</span>}
         </div>
         <div class="row" style={{ justifyContent: 'center' }}>
           <button class="btn ghost" onClick={download}><Icon name="download" size={16} /> Download PNG</button>
-          <button class="btn primary" onClick={() => (locked ? setProTpl(tpl) : setPublishing(true))}><Icon name="clock" size={16} /> Save & schedule</button>
+          <button class="btn primary" onClick={() => setPublishing(true)}><Icon name="clock" size={16} /> Save & schedule</button>
         </div>
         <div class="row" style={{ justifyContent: 'center' }}>
           <button class="link-btn small" onClick={() => { setDesign(applyBrand(newDesign(design.templateId, brand), brand)); toast('Reset to template defaults'); }}>Reset design</button>
@@ -296,7 +268,6 @@ export function Designer({ query }) {
       {publishing && <PublishDialog templateId={design.templateId} getImage={getImage}
         defaults={{ title: design.text.headline, headline: design.text.headline, topic: [design.text.kicker, design.text.headline].filter(Boolean).join(' – ') }}
         onClose={() => setPublishing(false)} />}
-      {proTpl && <ProModal tpl={proTpl} onClose={() => setProTpl(null)} />}
     </div>
   );
 }

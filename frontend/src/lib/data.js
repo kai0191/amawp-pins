@@ -36,13 +36,21 @@ export function useBoards(accountId) {
 }
 
 export function brandKit() {
-  return getState().user?.settings?.brandKit || {};
+  return getState().profile?.brandKit || {};
 }
 
+/** Reload counts + profile from the data home. */
 export async function refreshMe() {
-  const user = await api.me();
-  setState({ user });
-  return user;
+  const info = await api.info();
+  setState({ overview: info.overview || {}, profile: info.profile || {} });
+  return info;
+}
+
+export async function saveProfile(patch) {
+  const profile = { ...(getState().profile || {}), ...patch };
+  const saved = await api.saveProfile(profile);
+  setState({ profile: saved || profile });
+  return saved;
 }
 
 export function stockKeys() { return pref('stockKeys', {}); }

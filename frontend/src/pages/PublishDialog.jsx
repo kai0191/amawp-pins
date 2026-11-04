@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useStore, toast, navigate, userTz, pref, setPref } from '../lib/store.js';
 import { useAccounts, useBoards, refreshMe } from '../lib/data.js';
 import { fromLocalInput, nextRoundedSlot } from '../lib/time.js';
+import { SeoScore } from './Seo.jsx';
 
 /** Account + board picker with inline "create board". */
 export function AccountBoardPicker({ accountId, setAccountId, boardId, setBoardId, setBoardName }) {
@@ -26,7 +27,7 @@ export function AccountBoardPicker({ accountId, setAccountId, boardId, setBoardI
   if (accounts && !accounts.length) {
     return (
       <div class="notice warn small">
-        No Pinterest account connected yet. You can save pins as drafts now and <a href="#/app/accounts">connect Pinterest</a> later.
+        No Pinterest account connected yet. Save pins as drafts now and <a href="#/app/accounts">connect Pinterest</a> later.
       </div>
     );
   }
@@ -71,12 +72,14 @@ export function AccountBoardPicker({ accountId, setAccountId, boardId, setBoardI
  */
 export function PublishDialog({ onClose, getImage, defaults = {}, templateId }) {
   const s = useStore();
-  const tz = userTz(s.user);
+  const tz = userTz();
   const [title, setTitle] = useState(defaults.title || '');
   const [description, setDescription] = useState('');
   const [link, setLink] = useState(defaults.link || pref('lastLink', ''));
   const [altText, setAltText] = useState('');
-  const [keywords, setKeywords] = useState('');
+  const savedKw = pref('seoKeywords', []);
+  const [keyword, setKeyword] = useState(defaults.keyword || savedKw[0] || '');
+  const [related, setRelated] = useState(savedKw.slice(1, 3).join(', '));
   const [accountId, setAccountId] = useState(null);
   const [boardId, setBoardId] = useState(null);
   const [boardName, setBoardName] = useState('');
@@ -89,7 +92,7 @@ export function PublishDialog({ onClose, getImage, defaults = {}, templateId }) 
   async function writeWithAi() {
     setAiBusy(true);
     try {
-      const r = await api.aiText('pin_copy', { topic: defaults.topic || title || defaults.headline, headline: defaults.headline, link, board: boardName, keywords });
+      const r = await api.aiText('pin_copy', { topic: defaults.topic || title || defaults.headline, headline: defaults.headline, link, board: boardName, keywords: [keyword, related].filter(Boolean).join(', ') });
       const d = r.data || {};
       if (!d.title && !d.description) throw new Error('The AI reply was not in the expected format. Please try again.');
       if (d.title) setTitle(String(d.title).slice(0, 100));
@@ -109,13 +112,13 @@ export function PublishDialog({ onClose, getImage, defaults = {}, templateId }) 
       if (when === 'schedule' && (!scheduledAt || scheduledAt < Date.now() + 60000)) throw new Error('Pick a time in the future.');
       if (when !== 'draft' && (!accountId || !boardId)) throw new Error('Choose a Pinterest account and a board, or save as a draft.');
       const pin = await api.createPin({
-        image, thumb, title, description, link, altText, templateId, accountId, boardId, boardName,
+        image, thumb, title, description, link, altText, templateId, accountId, boardId, boardName, keyword,
         status: when === 'schedule' ? 'scheduled' : 'draft', scheduledAt,
       });
       if (when === 'now') {
         const r = await api.postNow(pin.id);
-        if (r.result?.status === 'posted') toast(s.mode === 'demo' ? 'Demo: pin marked as posted (nothing sent to Pinterest).' : 'Posted to Pinterest! 🎉', 'ok');
-        else toast(`Could not post yet: ${r.result?.error || 'unknown error'}`, 'error', 7000);
+        if (r.result?.status === 'posted') toast('Posted to Pinterest! 🎉', 'ok');
+        else toast(`Not posted yet: ${r.result?.error || 'unknown error'}`, r.result?.status === 'scheduled' ? 'info' : 'error', 8000);
       } else {
         toast(when === 'schedule' ? 'Pin scheduled ✓' : 'Saved to drafts. Auto-schedule it from the Schedule page.', 'ok');
       }
@@ -147,13 +150,17 @@ export function PublishDialog({ onClose, getImage, defaults = {}, templateId }) 
           <label class="field">Destination link
             <input type="url" value={link} onInput={(e) => setLink(e.target.value)} placeholder="https://yourwebsite.com/post" />
           </label>
-          <label class="field">Keywords for AI (optional)
-            <input type="text" value={keywords} onInput={(e) => setKeywords(e.target.value)} placeholder="fall decor, cozy living room" />
+          <label class="field">Main keyword (<a href="#/app/seo" target="_blank">research</a>)
+            <input type="text" value={keyword} onInput={(e) => setKeyword(e.target.value)} placeholder="fall decor ideas" />
+          </label>
+          <label class="field">Related keywords
+            <input type="text" value={related} onInput={(e) => setRelated(e.target.value)} placeholder="cozy living room, autumn decor" />
           </label>
         </div>
         <label class="field">Alt text (accessibility)
           <input type="text" maxLength={500} value={altText} onInput={(e) => setAltText(e.target.value)} placeholder="Describe the image for screen readers" />
         </label>
+        <div class="card flat pad-sm"><SeoScore compact input={{ title, description, altText, link, keyword, secondary: related.split(',').map((x) => x.trim()).filter(Boolean), boardName, headline: defaults.headline }} /></div>
         <div class="divider" />
         <AccountBoardPicker accountId={accountId} setAccountId={setAccountId} boardId={boardId} setBoardId={setBoardId} setBoardName={setBoardName} />
         {boardIdeas.length > 0 && <div class="small muted">AI board ideas: {boardIdeas.map((b) => <span key={b} class="chip" style={{ marginRight: 6 }}>{b}</span>)}</div>}
@@ -169,7 +176,7 @@ export function PublishDialog({ onClose, getImage, defaults = {}, templateId }) 
           </label>
         )}
         {when === 'draft' && <p class="small muted" style={{ margin: 0 }}>Drafts can be auto-scheduled in bulk with natural, spread-out times on the <a href="#/app/schedule" onClick={() => onClose(false)}>Schedule</a> page.</p>}
-        {when === 'now' && s.mode === 'demo' && <p class="small muted" style={{ margin: 0 }}>Demo mode: the pin will be marked as posted but nothing is sent to Pinterest.</p>}
+        {when !== 'draft' && <p class="tiny faint" style={{ margin: 0 }}>Safety: max 10 pins per account per day, spaced at least 10 minutes apart. Extra pins wait for the next safe slot.</p>}
       </div>
     </Modal>
   );

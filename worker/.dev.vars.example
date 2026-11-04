@@ -3,3 +3,7 @@ PINTEREST_APP_ID=
 PINTEREST_APP_SECRET=
 JWT_SECRET=local-dev-jwt-secret-change-me
 ENC_KEY=local-dev-enc-key-change-me
+ADMIN_KEY=local-dev-admin-key-1234567890
+# Optional: your own image library API (kept secret on the server)
+AMAWP_IMAGE_API_URL=
+AMAWP_IMAGE_API_KEY=

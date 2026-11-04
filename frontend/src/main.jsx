@@ -2,19 +2,32 @@ import { render } from 'preact';
 import { useEffect } from 'preact/hooks';
 import './styles.css';
 import { initApi, api } from './lib/api.js';
-import { useStore, setState, useRoute, navigate } from './lib/store.js';
-import { setToken } from './lib/config.js';
+import { useStore, setState, useRoute, navigate, toast } from './lib/store.js';
+import { refreshMe, resetAccountCaches } from './lib/data.js';
 import { Toasts, Spinner } from './components.jsx';
 import { Landing } from './pages/Landing.jsx';
-import { AuthPage } from './pages/Auth.jsx';
 import { Legal } from './pages/Legal.jsx';
 import { AppShell } from './pages/AppShell.jsx';
-import { Upgrade } from './pages/Upgrade.jsx';
 
 try {
   const t = localStorage.getItem('tackly.theme');
   if (t) document.documentElement.dataset.theme = t;
 } catch { /* ignore */ }
+
+/** Pinterest returns here (#/connected?sealed=...) after the user approves Tackly. */
+async function finishConnect() {
+  const m = location.hash.match(/^#\/connected\?(.*)$/);
+  if (!m) return false;
+  const q = new URLSearchParams(m[1]);
+  history.replaceState(null, '', `${location.pathname}${location.search}#/app/accounts`);
+  try {
+    await api.addAccount({ sealed: q.get('sealed'), username: q.get('u'), profile_image: q.get('img') });
+    resetAccountCaches();
+    toast(`Pinterest @${q.get('u')} connected ✓`, 'ok');
+  } catch (e) { toast(e.message, 'error', 8000); }
+  navigate('/app/accounts');
+  return true;
+}
 
 function App() {
   const s = useStore();
@@ -22,34 +35,25 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      // "Continue with Pinterest" returns here with a session token.
-      const m = location.hash.match(/^#\/auth\?token=([^&]+)/);
-      if (m) { setToken(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search + '#/app'); }
       const res = await initApi();
-      let user = null;
-      try { user = await api.me(); } catch { /* ignore */ }
-      setState({ mode: res.mode, health: res.health, attempted: res.attempted, user, ready: true });
-      if (m) navigate('/app');
+      setState({ relay: res.relay, health: res.health, home: res.home, engineError: res.engineError });
+      try { await refreshMe(); } catch { /* engine offline */ }
+      await finishConnect();
+      setState({ ready: true });
     })();
+    // Browser data home: post due pins while Tackly is open (the engine does this 24/7 on its own).
+    const t = setInterval(() => { if (getReady()) api.runDue().catch(() => {}); }, 60000);
+    return () => clearInterval(t);
   }, []);
 
-  if (!s.ready) {
-    return <div class="auth-wrap"><div class="row muted"><Spinner /> Loading Tackly…</div></div>;
-  }
+  if (!s.ready) return <div class="auth-wrap"><div class="row muted"><Spinner /> Loading Tackly…</div></div>;
   const p = route.path;
-  if (p === '/' || p === '') return <Landing />;
-  if (p === '/login' || p === '/signup') return <AuthPage mode={p.slice(1)} />;
   if (p === '/privacy' || p === '/terms' || p === '/data-deletion') return <Legal page={p.slice(1)} />;
-  if (p === '/upgrade') return s.user ? <AppShell route={{ ...route, path: '/upgrade' }} page={<Upgrade query={route.query} />} /> : <Upgrade query={route.query} standalone />;
-  if (p.startsWith('/app')) {
-    if (!s.user) { setTimeout(() => navigate('/login'), 0); return null; }
-    return <AppShell route={route} />;
-  }
+  if (p === '/login' || p === '/signup' || p === '/upgrade') { setTimeout(() => navigate('/app'), 0); return null; }
+  if (p.startsWith('/app')) return <AppShell route={route} />;
   return <Landing />;
 }
+const getReady = () => document.readyState === 'complete';
 
-function Root() {
-  return <><App /><Toasts /></>;
-}
-
-render(<Root />, document.getElementById('app'));
+document.getElementById('seo-static')?.remove();
+render(<><App /><Toasts /></>, document.getElementById('app'));

@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kai0191.github.io/amawp-pins/sitemap.xml

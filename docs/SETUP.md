@@ -1,155 +1,139 @@
-# Tackly setup guide (no coding needed)
+# Tackly owner setup (no coding needed)
 
-The website already works in **demo mode** (everything is saved in the visitor's browser and nothing is posted to Pinterest).
-These steps switch on the real backend so people can sign up, connect Pinterest and schedule pins.
-Everything here is on free plans. You never need a credit card.
+Tackly has three parts:
+
+| Part | Where it runs | Stores user data? |
+|---|---|---|
+| **Website** | GitHub Pages: <https://kai0191.github.io/amawp-pins/> | No (users' data stays in their own browser) |
+| **Relay** (`worker/`) | **Your** Cloudflare (free) | **No.** Only anonymous safety counters (salted hash + timestamps, deleted after 2 days) and daily totals |
+| **Engine** (`engine/`, optional) | **Each user's own** Cloudflare (free) | Yes, but in *their* account, not yours |
+
+The relay holds your Pinterest app secret, handles "Connect Pinterest", and enforces the safety limit:
+**max 10 pins per Pinterest account in any 24 hours, at least 10 minutes apart.** Users cannot bypass it: their
+Pinterest tokens are sealed (encrypted) with your key, so they only work through your relay.
+
+> **Never paste a key or secret into a file, an issue or a chat.** Secrets only go into GitHub's **Secrets** page.
+> They are hidden there and cannot be read back. A secret scanner runs on every push and blocks accidental leaks.
 
 Total time: about 20 minutes.
 
-> **Never paste a key or secret into a file in the repository, an issue or a chat.** Secrets only go into the
-> GitHub "Secrets" page (step 3). They are hidden there and cannot be read back.
-
 ---
 
-## Step 1: Turn on GitHub Pages (1 minute)
-
-The deploy workflow tries to do this for you. If the website link does not open, do it by hand:
+## Step 1: Turn on GitHub Pages (1 minute, required once)
 
 1. Open <https://github.com/kai0191/amawp-pins/settings/pages>.
 2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. That's it. Your website address is **<https://kai0191.github.io/amawp-pins/>**.
+3. Open <https://github.com/kai0191/amawp-pins/actions/workflows/deploy.yml> → **Run workflow → Run workflow**.
+4. After about 2 minutes your site is live at **<https://kai0191.github.io/amawp-pins/>** (it works in preview mode until step 4).
 
 ---
 
 ## Step 2: Make a Cloudflare API token (5 minutes)
 
 1. Sign in at <https://dash.cloudflare.com>.
-2. Top right, click your **profile icon → My Profile**.
-3. In the left menu click **API Tokens**, then the blue **Create Token** button.
-4. Find the **Edit Cloudflare Workers** template and click **Use template**.
-5. Under **Permissions**, click **+ Add more** and add these rows, so the list includes:
+2. Top right: **profile icon → My Profile → API Tokens → Create Token**.
+3. Find **Edit Cloudflare Workers** and click **Use template**.
+4. Under **Permissions** click **+ Add more** so the list includes:
    - Account → **Workers Scripts** → Edit (already there)
    - Account → **Workers KV Storage** → Edit (already there)
-   - Account → **D1** → **Edit** ← *add this one, the template does not include it*
-6. Under **Account Resources**: choose **Include → your account**.
-7. Under **Zone Resources**: choose **Include → All zones** (the template needs this; Tackly does not change your sites).
-8. Click **Continue to summary → Create Token**.
-9. **Copy the token now** (it is shown only once). Keep this browser tab open for step 3.
-
-### Find your Cloudflare Account ID
-
-1. Go back to <https://dash.cloudflare.com> and click **Workers & Pages** in the left menu.
-2. On the right side you will see **Account ID**. Click the copy icon next to it.
+   - Account → **D1** → **Edit** ← *add this one*
+5. **Account Resources:** Include → your account. **Zone Resources:** Include → All zones.
+6. **Continue to summary → Create Token**. **Copy the token now** (shown only once).
+7. Your **Account ID**: dashboard home → **Workers & Pages** → right side, **Account ID** → copy.
 
 ---
 
-## Step 3: Add the secrets to GitHub (5 minutes)
+## Step 3: Add secrets to GitHub (5 minutes)
 
-1. Open <https://github.com/kai0191/amawp-pins/settings/secrets/actions>.
-2. Click **New repository secret** for each row below. Type the **Name** exactly as shown and paste the value.
+Open <https://github.com/kai0191/amawp-pins/settings/secrets/actions> → **New repository secret** for each:
 
 | Name | Value | Needed? |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | The token from step 2 | **Required** |
-| `CLOUDFLARE_ACCOUNT_ID` | The Account ID from step 2 | **Required** |
-| `PINTEREST_APP_ID` | Your Pinterest app's **App ID** (step 4) | Required for Pinterest |
-| `PINTEREST_APP_SECRET` | Your Pinterest app's **App secret key** (step 4) | Required for Pinterest |
-| `JWT_SECRET` | Any long random text, 40+ characters (use a password generator) | Recommended |
-| `ENC_KEY` | A *different* long random text, 40+ characters | Recommended |
+| `CLOUDFLARE_API_TOKEN` | Token from step 2 | **Required** |
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID from step 2 | **Required** |
+| `PINTEREST_APP_ID` | Pinterest app **App ID** (step 5) | **Required** for Pinterest |
+| `PINTEREST_APP_SECRET` | Pinterest app **App secret key** (step 5) | **Required** for Pinterest |
+| `ENC_KEY` | Long random text, 40+ characters (use a password generator) | Strongly recommended |
+| `JWT_SECRET` | A *different* long random text, 40+ characters | Strongly recommended |
+| `ADMIN_KEY` | Another long random text (20+ characters) | To see owner stats in the app |
+| `AMAWP_IMAGE_API_URL` | Your own free image API address (see below) | Optional |
+| `AMAWP_IMAGE_API_KEY` | That API's key, if it needs one | Optional |
 
-About `JWT_SECRET` and `ENC_KEY`: if you skip them, the server creates strong random ones by itself and keeps them
-in your Cloudflare storage. If you do set them, **never change `ENC_KEY` later**, because the saved Pinterest
-connections are locked with it and users would have to reconnect.
+**Never change `ENC_KEY` later.** Every user's saved Pinterest connection is sealed with it; changing it means
+everyone must reconnect Pinterest. If you skip `ENC_KEY`/`JWT_SECRET`, the relay creates strong random ones itself.
 
-### Optional settings (the "Variables" tab, not secrets)
-
-On the same page, click the **Variables** tab → **New repository variable**:
+### Optional variables (the **Variables** tab on the same page)
 
 | Name | Value | What it does |
 |---|---|---|
-| `OWNER_EMAIL` | The email you sign up to Tackly with | Unlocks the **Owner** dashboard (users, connections, pins posted, waitlist) for you only |
-| `CONTACT_EMAIL` | A support email address | Shown on the privacy, terms and data-deletion pages |
-| `PINTEREST_SANDBOX` | `true` or `false` | Use `true` only while your Pinterest app has **Trial** access (see step 5) |
+| `CONTACT_EMAIL` | Support email | Shown on privacy, terms and data-deletion pages |
+| `AMAWP_IMAGE_NAME` | e.g. `AMAWP free images` | Name of your image library in the app |
+| `PINTEREST_SANDBOX` | `true` / `false` | `true` only while your Pinterest app has **Trial** access |
+| `PINTEREST_EXTRA_SCOPES` | `ads:read` | Unlocks Pinterest's own keyword + trends data, **only if your Pinterest app is approved for `ads:read`**. Leave empty otherwise |
+
+### Your own free image library (optional)
+
+Set `AMAWP_IMAGE_API_URL` to any image search API that returns JSON. Use `{q}` and `{page}` where the search
+words and page number go, e.g. `https://images.example.com/search?query={q}&page={page}` (otherwise Tackly adds
+`?q=…&page=…`). Tackly understands the usual formats (`results`, `images`, `hits`, `photos`, `data` lists with
+`url`/`src`/`full` + `thumb`/`thumbnail`). The key stays on Cloudflare and is never sent to browsers. The library
+then shows up first in every image picker as **AMAWP free images**.
 
 ---
 
-## Step 4: Deploy, then add the redirect URI in Pinterest (5 minutes)
+## Step 4: Deploy the relay and add the Pinterest redirect URI
 
-1. Open <https://github.com/kai0191/amawp-pins/actions/workflows/deploy.yml> and click **Run workflow → Run workflow**.
-2. Wait about 2 minutes until it shows a green tick. Click the run and scroll down to the **summary**. It shows:
-   - your **Worker URL**, for example `https://tackly-api.YOUR-NAME.workers.dev`
-   - the exact **redirect URI** to copy: `https://tackly-api.YOUR-NAME.workers.dev/api/pinterest/callback`
-3. Open <https://developers.pinterest.com/apps/> and click your **AMAWP** app.
-4. Find **Redirect URIs** (in the app's **Configure** section), paste the redirect URI from the summary, and click
-   **Add**, then **Save**.
-5. On the same page, copy the **App ID** and **App secret key**. If you have not yet added them in step 3, add them
-   now, then run the workflow again (step 4.1).
+1. Actions → **Deploy → Run workflow**. Wait for the green tick (about 3 minutes).
+2. Open the run and scroll to the **summary**. It shows your relay URL and the exact **redirect URI**, like
+   `https://tackly-api.YOUR-NAME.workers.dev/api/pinterest/callback`.
+3. Open <https://developers.pinterest.com/apps/> → your **AMAWP** app → **Redirect URIs** → paste it → **Add → Save**.
 
-Pinterest asks for these links during app review. They are already live:
+Links Pinterest asks for in app review (already live after step 1):
 
 - Website: <https://kai0191.github.io/amawp-pins/>
 - Privacy policy: <https://kai0191.github.io/amawp-pins/#/privacy>
 - Terms: <https://kai0191.github.io/amawp-pins/#/terms>
 - Data deletion: <https://kai0191.github.io/amawp-pins/#/data-deletion>
 
----
-
 ## Step 5: Pinterest Trial vs Standard access
 
-New Pinterest apps start with **Trial** access. With Trial access Pinterest only lets the app create pins in its
-*sandbox*, and only the app owner can use it.
+- **Trial:** set the variable `PINTEREST_SANDBOX` to `true` and run Deploy again. Pins go to Pinterest's sandbox
+  (visible only to you).
+- **Standard** (public pins for everyone): on your app page click **Upgrade access**, record a short video
+  (open Tackly → Accounts → Connect Pinterest → approve → design a pin → Save & schedule → Post now → show it on
+  Pinterest), fill in the form with the links above, and submit. When approved, set `PINTEREST_SANDBOX` to `false`.
 
-- **If your app shows Trial:** set the variable `PINTEREST_SANDBOX` to `true` (step 3) and run the workflow again.
-  Pins are then created in Pinterest's sandbox (only visible to you), which is fine for testing.
-- **To get Standard access** (so anyone can use Tackly and pins are public):
-  1. Open your app on <https://developers.pinterest.com/apps/>.
-  2. Click **Upgrade access** (or **Request standard access**).
-  3. Pinterest asks for a short **screen recording**: sign in to Tackly, click **Accounts → Connect Pinterest**,
-     approve, then design a pin and click **Save & schedule → Post now**, and show it on Pinterest.
-  4. Fill in the form (use the website, privacy policy and data-deletion links above) and submit.
-  5. When approved, set `PINTEREST_SANDBOX` to `false` (or delete the variable) and run the workflow again.
+Your AMAWP app is already approved, so you can leave `PINTEREST_SANDBOX` unset.
 
-Since your AMAWP app is already approved for standard access, you can keep `PINTEREST_SANDBOX` unset.
+## Step 6: Test
 
----
-
-## Step 6: Test it
-
-1. Open <https://kai0191.github.io/amawp-pins/>. The yellow "Demo mode" banner should be gone.
-2. Click **Start free** and sign up with the email you put in `OWNER_EMAIL`.
-3. Go to **Accounts → Connect Pinterest** and approve.
-4. Design a pin, click **Save & schedule**, pick a board and choose **Post now**. Check it on Pinterest.
-5. Click **Owner** in the left menu to see users, connections, pins posted and the paid-plan waitlist.
+1. Open the site; the "Preview" banner should be gone.
+2. **Accounts → Connect Pinterest**, approve, design a pin, **Save & schedule → Post now**, then check Pinterest.
+3. **Settings → Owner stats**: enter `ADMIN_KEY` to see daily connects, pins published and errors (totals only).
 
 ---
 
-## Free-plan limits (good to know)
+## Free-plan limits on your Cloudflare (relay only)
 
-Everything runs on free plans. These are the limits that matter, all far above what a new product needs:
-
-| Service | Free limit | What uses it |
+| Service | Free limit | Relay usage |
 |---|---|---|
-| Cloudflare Workers | 100,000 requests/day | Every page action |
-| Cloudflare D1 | 5 GB, 5 million reads/day, 100,000 writes/day | Users, pins, schedules |
-| Cloudflare KV | 1 GB, 1,000 writes/day | Pin images waiting to be posted (about 500 new pins a day) |
-| Cron Triggers | 5 per account | Tackly uses 1 (every 5 minutes) |
-| GitHub Pages + Actions | Free for public repositories | Website + deploys |
+| Workers | 100,000 requests/day | Connect, boards, publish, keyword lookups |
+| D1 | 5 GB, 100,000 writes/day | ~2 small writes per published pin; counters auto-deleted |
+| Cron | 5 per account | 1 (daily cleanup) |
 
-If you already have 5 cron triggers on your Cloudflare account, the deploy fails with a cron error. Remove an
-unused one in **Workers & Pages → (worker) → Settings → Triggers**.
+Because users' pins, images and schedules live in their own browsers or their own Cloudflare engines, your usage
+stays tiny even with many users. The 10-pins-a-day limit also caps relay traffic per Pinterest account.
 
-## Turning on paid plans later
+## Users' own engines
 
-Plans live in the `plans` table in D1 (Cloudflare → **Storage & Databases → D1 → tackly-db → Console**).
-The free plan row says `max_accounts = 1`. The `pro` and `agency` rows are ready but switched off (`active = 0`).
-To give one user Pro now, open the **Owner** dashboard and change their plan in the users table.
+Users set up their own engine from **Settings → Data home** (one-click "Deploy to Cloudflare"). Guides:
+[ENGINE.md](ENGINE.md) and [MCP.md](MCP.md). You do nothing for this.
 
 ## Troubleshooting
 
-- **Deploy is green but the site still says Demo mode:** open the latest Deploy run, check the summary shows a
-  Worker URL. If it says "Backend not deployed yet", the Cloudflare secrets are missing or misspelled.
-- **"Pinterest is not connected on this server yet":** `PINTEREST_APP_ID` / `PINTEREST_APP_SECRET` are missing.
-  Add them and run the workflow again.
-- **Pinterest says the redirect URI is invalid:** the URI in the Pinterest app must match the one in the deploy
-  summary exactly, including `/api/pinterest/callback`.
-- **Error mentioning D1 permission:** the Cloudflare token is missing the **D1 → Edit** permission (step 2.5).
+- **Site still shows "Preview":** the Deploy summary must show a relay URL. If it says "Backend not deployed yet",
+  the Cloudflare secrets are missing or misspelled.
+- **"Pinterest connection is not switched on":** add `PINTEREST_APP_ID` and `PINTEREST_APP_SECRET`, then deploy again.
+- **Pinterest says the redirect URI is invalid:** it must exactly match the one in the Deploy summary.
+- **Error about D1 permission:** the Cloudflare token is missing **D1 → Edit**.
+- **Deploy fails with a cron error:** you already use 5 cron triggers on your Cloudflare account; remove an unused one.

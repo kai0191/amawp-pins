@@ -1,87 +1,87 @@
 import { Logo, Icon, ThemeToggle } from '../components.jsx';
-import { useStore, setState, navigate } from '../lib/store.js';
-import { api } from '../lib/api.js';
+import { useStore } from '../lib/store.js';
 import { Dashboard } from './Dashboard.jsx';
 import { Designer } from './Designer.jsx';
 import { Bulk } from './Bulk.jsx';
 import { Schedule } from './Schedule.jsx';
 import { Accounts } from './Accounts.jsx';
 import { Settings } from './Settings.jsx';
-import { Admin } from './Admin.jsx';
+import { Seo } from './Seo.jsx';
+import { Integrations } from './Integrations.jsx';
+import { Owner } from './Owner.jsx';
+import { DAILY_PIN_LIMIT } from '../../../shared/limits.js';
 
 const NAV = [
   ['/app', 'home', 'Home'],
   ['/app/design', 'design', 'Design'],
   ['/app/bulk', 'layers', 'Bulk'],
   ['/app/schedule', 'calendar', 'Schedule'],
+  ['/app/seo', 'chart', 'Pinterest SEO'],
+  ['/app/integrations', 'sparkle', 'Canva & AI'],
   ['/app/accounts', 'link', 'Accounts'],
   ['/app/settings', 'settings', 'Settings'],
 ];
+const MOBILE = [['/app', 'home', 'Home'], ['/app/design', 'design', 'Design'], ['/app/schedule', 'calendar', 'Schedule'], ['/app/seo', 'chart', 'SEO']];
 
 const TITLES = {
-  '/app': 'Home', '/app/design': 'Pin designer', '/app/bulk': 'Bulk create', '/app/schedule': 'Schedule',
-  '/app/accounts': 'Pinterest accounts', '/app/settings': 'Settings', '/app/admin': 'Owner dashboard', '/upgrade': 'Upgrade',
+  '/app': 'Home', '/app/design': 'Pin designer', '/app/bulk': 'Bulk create', '/app/schedule': 'Schedule', '/app/seo': 'Pinterest SEO',
+  '/app/integrations': 'Canva & AI assistants', '/app/accounts': 'Pinterest account', '/app/settings': 'Settings', '/app/owner': 'Owner stats',
 };
 
-export function AppShell({ route, page }) {
+export function AppShell({ route }) {
   const s = useStore();
   const p = route.path;
-  const nav = s.user?.isAdmin ? [...NAV, ['/app/admin', 'shield', 'Owner']] : NAV;
-  let content = page;
-  if (!content) {
-    if (p === '/app/design') content = <Designer query={route.query} />;
-    else if (p === '/app/bulk') content = <Bulk />;
-    else if (p === '/app/schedule') content = <Schedule query={route.query} />;
-    else if (p === '/app/accounts') content = <Accounts query={route.query} />;
-    else if (p === '/app/settings') content = <Settings />;
-    else if (p === '/app/admin') content = <Admin />;
-    else content = <Dashboard />;
-  }
+  const pages = {
+    '/app/design': <Designer query={route.query} />, '/app/bulk': <Bulk query={route.query} />, '/app/schedule': <Schedule query={route.query} />,
+    '/app/seo': <Seo query={route.query} />, '/app/integrations': <Integrations query={route.query} />, '/app/accounts': <Accounts query={route.query} />,
+    '/app/settings': <Settings />, '/app/owner': <Owner />,
+  };
+  const content = pages[p] || <Dashboard />;
+  const home = s.home?.mode === 'engine' ? 'Your Cloudflare engine' : 'This browser';
   return (
     <div class="app">
       <aside class="sidebar">
         <Logo />
-        {nav.map(([href, icon, label]) => (
+        {NAV.map(([href, icon, label]) => (
           <a key={href} class={`nav-item ${p === href ? 'active' : ''}`} href={`#${href}`}><span class="ni"><Icon name={icon} /></span>{label}</a>
         ))}
         <div class="spacer" />
         <div class="plan-box stack" style={{ gap: 6 }}>
-          <div class="row between"><b>{s.user?.plan?.name || 'Free'} plan</b><span class="chip ok">Active</span></div>
-          <span class="muted tiny">{s.user?.usage?.accounts || 0} / {s.user?.plan?.maxAccounts || 1} Pinterest account</span>
-          <a class="small" href="#/upgrade">Need more accounts?</a>
+          <div class="row between"><b>Free</b><span class="chip ok">Active</span></div>
+          <span class="muted tiny">Data home: {home}</span>
+          <span class="muted tiny">Safety limit: {DAILY_PIN_LIMIT} pins / day per account</span>
+          <a class="small" href="#/app/settings">Data & privacy</a>
         </div>
         <div class="row" style={{ padding: '10px 4px 0' }}>
-          <span class="tiny muted grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.user?.email}</span>
+          <span class="tiny muted grow">{s.profile?.name ? `Hi, ${s.profile.name}` : 'Tackly by AMAWP'}</span>
           <ThemeToggle />
-          <button class="btn icon ghost" title="Sign out" aria-label="Sign out" onClick={() => { api.logout(); setState({ user: null }); navigate('/'); }}>
-            <Icon name="logout" />
-          </button>
         </div>
       </aside>
       <div class="main">
-        {s.mode === 'demo' && (
-          <div class="demo-banner">
-            <span class="chip warn">Demo mode</span>
-            <span>The Tackly server is not connected yet. Everything works and is saved in this browser, but nothing is posted to Pinterest.</span>
-          </div>
+        {!s.relay && (
+          <div class="demo-banner"><span class="chip warn">Preview</span><span>The Tackly server is not reachable, so Pinterest posting and keyword research are paused. Designing, saving and planning all work.</span></div>
         )}
-        {s.mode === 'remote' && s.health && !s.health.pinterestConfigured && (
-          <div class="demo-banner"><span class="chip warn">Setup</span><span>The server is live but the Pinterest app keys are not added yet, so connecting Pinterest is disabled.</span></div>
+        {s.relay && s.health && !s.health.pinterestConfigured && (
+          <div class="demo-banner"><span class="chip warn">Setup</span><span>Pinterest connection is not switched on for this server yet. You can still design and plan pins with a preview account.</span></div>
+        )}
+        {s.engineError && (
+          <div class="demo-banner" style={{ background: 'var(--danger-soft)' }}><span class="chip danger">Engine offline</span><span>Your Cloudflare engine did not answer: {s.engineError}. <a href="#/app/settings">Check Data home</a>.</span></div>
+        )}
+        {s.home?.mode !== 'engine' && s.relay && p === '/app/schedule' && (
+          <div class="demo-banner"><span class="chip">Browser mode</span><span>Scheduled pins post while Tackly is open in a tab. <a href="#/app/settings">Connect your free Cloudflare engine</a> to post 24/7.</span></div>
         )}
         <div class="topbar">
           <h1>{TITLES[p] || 'Tackly'}</h1>
           <div class="grow" />
-          <span class="mobile-only row" style={{ gap: 6 }}>
-            <a class="btn primary sm" href="#/app/design"><Icon name="plus" size={16} /> New pin</a>
-          </span>
+          <a class="btn primary sm" href="#/app/design"><Icon name="plus" size={16} /> New pin</a>
         </div>
         <main class="page">{content}</main>
       </div>
       <nav class="bottom-nav" aria-label="App">
-        {NAV.slice(0, 5).map(([href, icon, label]) => (
+        {MOBILE.map(([href, icon, label]) => (
           <a key={href} class={p === href ? 'active' : ''} href={`#${href}`}><span class="ni"><Icon name={icon} size={20} /></span>{label}</a>
         ))}
-        <a class={p === '/app/settings' ? 'active' : ''} href="#/app/settings"><span class="ni"><Icon name="settings" size={20} /></span>More</a>
+        <a class={['/app/settings', '/app/integrations', '/app/accounts', '/app/bulk'].includes(p) ? 'active' : ''} href="#/app/settings"><span class="ni"><Icon name="settings" size={20} /></span>More</a>
       </nav>
     </div>
   );

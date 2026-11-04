@@ -32,6 +32,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - name: Check no secrets are committed
+        run: node scripts/check-secrets.mjs
+      - name: Check the engine copy of shared code is in sync
+        run: node scripts/sync-engine-shared.mjs --check
       - run: npm test
 
   worker:
@@ -88,18 +92,21 @@ jobs:
         id: deploy
         if: steps.check.outputs.ready == 'true'
         env:
-          OWNER_EMAIL: ${{ vars.OWNER_EMAIL }}
           PINTEREST_SANDBOX: ${{ vars.PINTEREST_SANDBOX || 'false' }}
+          PINTEREST_EXTRA_SCOPES: ${{ vars.PINTEREST_EXTRA_SCOPES || '' }}
+          AMAWP_IMAGE_NAME: ${{ vars.AMAWP_IMAGE_NAME || 'AMAWP free images' }}
           APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: |
           set -euo pipefail
           npx wrangler deploy --config worker/wrangler.toml \
-            --var "OWNER_EMAIL:${OWNER_EMAIL}" --var "PINTEREST_SANDBOX:${PINTEREST_SANDBOX}" --var "APP_URL:${APP_URL}" | tee deploy.log
+            --var "PINTEREST_SANDBOX:${PINTEREST_SANDBOX}" --var "APP_URL:${APP_URL}" \
+            --var "PINTEREST_EXTRA_SCOPES:${PINTEREST_EXTRA_SCOPES}" --var "AMAWP_IMAGE_NAME:${AMAWP_IMAGE_NAME}" | tee deploy.log
           URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "### Backend deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "Worker URL: $URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Pinterest redirect URI to add in your Pinterest app: \`$URL/api/pinterest/callback\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "This relay stores no user data. Owner stats: open the app, Settings > Owner stats, and enter ADMIN_KEY." >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Worker secrets
         if: steps.check.outputs.ready == 'true'
         env:
@@ -107,9 +114,12 @@ jobs:
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENC_KEY: ${{ secrets.ENC_KEY }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          AMAWP_IMAGE_API_URL: ${{ secrets.AMAWP_IMAGE_API_URL }}
+          AMAWP_IMAGE_API_KEY: ${{ secrets.AMAWP_IMAGE_API_KEY }}
         run: |
           node -e '
-            const keys = ["PINTEREST_APP_ID","PINTEREST_APP_SECRET","JWT_SECRET","ENC_KEY"];
+            const keys = ["PINTEREST_APP_ID","PINTEREST_APP_SECRET","JWT_SECRET","ENC_KEY","ADMIN_KEY","AMAWP_IMAGE_API_URL","AMAWP_IMAGE_API_KEY"];
             const out = {};
             for (const k of keys) if (process.env[k]) out[k] = process.env[k];
             require("fs").writeFileSync(process.env.RUNNER_TEMP + "/secrets.json", JSON.stringify(out));
@@ -141,6 +151,9 @@ jobs:
         run: |
           npm run build
           cp dist/index.html dist/404.html
+          # Single-file engine for users who paste it into the Cloudflare dashboard (docs/ENGINE.md, option B)
+          npx -y wrangler@4 deploy --dry-run --outdir dist-engine --config engine/wrangler.toml
+          mkdir -p dist/engine && cp dist-engine/index.js dist/engine/tackly-engine.js
           touch dist/.nojekyll
           echo "API base baked into the site: ${VITE_API_BASE:-(none, demo mode)}"
       - name: Turn on GitHub Pages (Actions source)

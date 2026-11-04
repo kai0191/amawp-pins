@@ -28,10 +28,9 @@ class Stmt {
 }
 
 export class D1Shim {
-  constructor() {
+  constructor(migration = '../migrations/0001_init.sql') {
     this.db = new DatabaseSync(':memory:');
-    const sql = readFileSync(fileURLToPath(new URL('../migrations/0001_init.sql', import.meta.url)), 'utf8');
-    this.db.exec(sql);
+    if (migration) this.db.exec(readFileSync(fileURLToPath(new URL(migration, import.meta.url)), 'utf8'));
   }
   prepare(sql) { return new Stmt(this.db, sql); }
   async batch(stmts) { const out = []; for (const s of stmts) out.push(await s.run()); return out; }
@@ -51,7 +50,7 @@ export function makeEnv(overrides = {}) {
     DB: new D1Shim(), KV: new KVShim(),
     JWT_SECRET: 'test-jwt-secret', ENC_KEY: 'test-enc-key',
     PINTEREST_APP_ID: 'app123', PINTEREST_APP_SECRET: 'secret456',
-    APP_URL: 'https://example.github.io/amawp-pins/', OWNER_EMAIL: 'owner@example.com',
+    APP_URL: 'https://example.github.io/amawp-pins/', ADMIN_KEY: 'admin-key-0123456789abcdef',
     PINTEREST_SANDBOX: 'false',
     ...overrides,
   };
@@ -73,8 +72,3 @@ export async function call(env, method, path, { body, token, headers = {} } = {}
   return { status: res.status, data, res };
 }
 
-export async function signupUser(env, email = 'user@example.com', password = 'password123') {
-  const r = await call(env, 'POST', '/api/auth/signup', { body: { email, password, timezone: 'America/New_York' }, headers: { ip: `ip-${email}` } });
-  if (r.status !== 201) throw new Error(`signup failed ${r.status} ${JSON.stringify(r.data)}`);
-  return r.data;
-}

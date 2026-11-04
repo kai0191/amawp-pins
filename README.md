@@ -1,59 +1,51 @@
 # Tackly by AMAWP
 
-**Free Pinterest pin designer + scheduler.** Premium 2:3 pin templates, a brand kit, free AI copy and images,
-bulk creation and natural auto-scheduling. Free forever for one Pinterest account.
+**Free Pinterest pin designer, Pinterest SEO toolkit and scheduler.** Research keywords, design fresh 2:3 pins
+(or upload Canva designs), score every pin for Pinterest SEO, connect AI assistants over MCP, and auto-schedule at
+natural times with built-in anti-spam limits.
 
 - Live site: <https://kai0191.github.io/amawp-pins/>
 - Owner setup (click by click): [docs/SETUP.md](docs/SETUP.md)
+- Users' own engine: [docs/ENGINE.md](docs/ENGINE.md) · AI assistants: [docs/MCP.md](docs/MCP.md)
 - Competitor research: [docs/competitors.md](docs/competitors.md)
 
 ## Features
 
-- **Pin designer:** 18 free templates plus 3 Pro previews, all 1000×1500: photo + headline, blog classic, centre card, checklist,
-  numbered steps, before/after, this-vs-that, top 3, cheat sheet, 2/3/4-photo collages, quote, big number,
-  product spotlight, recipe card, infographic and big listicle. Also 12 palettes, 11 Google Font pairings, overlay/zoom/position/filter
-  controls and PNG export, all rendered on a canvas in the browser.
-- **Images:** upload, image link, free stock search (Openverse, no key; optional Unsplash/Pexels/Pixabay keys), and
-  free AI images via Pollinations.ai, or your own OpenAI-compatible image API.
-- **AI copy:** titles, keyword-rich descriptions (no hashtags), alt text, headline ideas, list items and board ideas.
-  Uses free Pollinations by default, or your own OpenAI-compatible base URL, key and model (encrypted server-side).
-- **Bulk mode:** paste `Title | link | image` lines or a CSV and generate many pins with rotating templates and palettes.
-- **Scheduler:** calendar with drag-to-reschedule, a queue, drafts, post now, retries with backoff, failure reasons,
-  a post log and Pinterest pin stats.
-- **Auto-schedule:** pins-per-day range and active hours, or the "Best US peak times" preset. Times are random and
-  natural, and the same link is spread across different boards and days.
-- **Freemium-ready:** a `plans` table, server-side account limits, an upgrade screen with a waitlist that measures
-  demand, and an owner dashboard.
+- **Pinterest SEO:** keyword research (Pinterest when available, Google and Bing autocomplete, AI), a 0–100 pin SEO
+  score with fixes, a seasonal planner, a Rich Pins checker, keyword-rich board ideas and ranking tips.
+- **Designer:** 21 templates at 1000×1500, 12 palettes, 11 Google Font pairings, brand kit, PNG export.
+- **Images:** free stock photos (Openverse, optional Unsplash/Pexels/Pixabay keys, the optional AMAWP library),
+  images from the user's own blog post, uploads, links, and AI (Pollinations or the user's own provider).
+- **Bulk:** links, keywords or CSV → many pins; or upload Canva PNGs/.zip and let AI write the SEO copy.
+- **Scheduler:** calendar with drag-to-reschedule, queue, drafts, natural auto-schedule, link spreading, retries.
+- **Safety:** max **10 pins per Pinterest account per 24 hours**, 10+ minutes apart, enforced server-side.
+- **AI assistants (MCP):** Claude, ChatGPT, Codex, Cursor… can research, design (with Tackly templates), score and schedule.
+- **Privacy:** no sign-up, no user data on AMAWP's servers.
 
 ## Architecture (free tiers only)
 
-| Part | Tech |
-|---|---|
-| Website | Preact + Vite static SPA → GitHub Pages (`.github/workflows/deploy.yml`) |
-| API | Cloudflare Worker (`worker/`), no framework |
-| Database | Cloudflare D1 (`worker/migrations/`) |
-| Pin images | Cloudflare KV (base64, deleted after posting) |
-| Posting | Cron Trigger every 5 minutes → Pinterest API v5 `media_source.image_base64` |
-| Auth | Email + password (PBKDF2-SHA256, 100k iterations), HS256 JWT, D1-based rate limits, "Continue with Pinterest" |
-| Secrets | Pinterest tokens and AI keys encrypted with AES-256-GCM (`ENC_KEY`) |
+| Part | Folder | Runs on | Data |
+|---|---|---|---|
+| Website (Preact + Vite SPA) | `frontend/` | GitHub Pages | Users' data in their browser (IndexedDB) |
+| Relay | `worker/` | AMAWP's Cloudflare Worker + D1 | **No user data**: anonymous quota counters only |
+| Engine (optional, per user) | `engine/` | The user's own Cloudflare (Worker + D1 + KV + cron) | That user's pins, images, sealed Pinterest token |
+| Shared logic | `shared/` | Browser, relay and engine | Scheduler, limits, SEO, prompts, template catalogue |
 
-Shared logic used by both the browser and the Worker lives in `shared/`: plans, the scheduler, timezones and AI prompts.
-
-**Demo mode:** if the Worker is not deployed (no Cloudflare secrets yet), the site still deploys and runs fully in the
-browser with a clear "Demo mode" banner. The deploy workflow skips the Worker step without failing.
+Pinterest tokens are **sealed** (AES-256-GCM with the relay's `ENC_KEY`) and stored only in the user's data home.
+Only the relay can open them, so every publish goes through the relay's safety limit.
 
 ## Develop
 
 ```bash
 npm install
-npm test                 # Worker tests: plan limits, crypto, scheduler, poster, API
-npm run dev              # website on http://localhost:5173/amawp-pins/ (demo mode)
+npm test                                   # relay, engine + MCP, SEO, scheduler, limits, crypto
+npm run build && npm run preview           # website (add ?api=none for preview mode)
 cp worker/.dev.vars.example worker/.dev.vars
 npx wrangler d1 migrations apply DB --local --config worker/wrangler.toml
-npm run worker:dev       # API on http://localhost:8787
+npm run worker:dev                         # relay on http://localhost:8787  (open the site with ?api=http://localhost:8787)
+cd engine && cp .dev.vars.example .dev.vars && npx wrangler@4 dev --port 8788   # a user engine
+node scripts/sync-engine-shared.mjs        # after editing shared/, refresh the engine's copy
+node scripts/check-secrets.mjs             # the same secret scan CI runs
 ```
 
-Open the site with `?api=http://localhost:8787` to use the local API, or `?api=demo` to force demo mode
-(`?api=reset` clears the override).
-
-Tackly is an independent product by AMAWP and is not affiliated with Pinterest, Inc.
+Tackly is an independent product by AMAWP and is not affiliated with Pinterest, Inc. or Canva Pty Ltd.

@@ -1,4 +1,4 @@
-# Tackly by AMAWP: Cloudflare Worker config.
+# Tackly relay (AMAWP): Pinterest login + safety limits. Stores no user data.
 # The deploy workflow fills in the two __..._ID__ placeholders automatically
 # (it creates the D1 database and KV namespace on first deploy). Do not put secrets here.
 name = "tackly-api"
@@ -8,7 +8,8 @@ workers_dev = true
 
 [vars]
 APP_URL = "https://kai0191.github.io/amawp-pins/"
-OWNER_EMAIL = ""
+PINTEREST_EXTRA_SCOPES = ""
+AMAWP_IMAGE_NAME = "AMAWP free images"
 PINTEREST_SANDBOX = "false"
 ALLOWED_ORIGINS = "https://kai0191.github.io,http://localhost:5173,http://localhost:4173"
 
@@ -23,4 +24,4 @@ binding = "KV"
 id = "__KV_NAMESPACE_ID__"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["17 3 * * *"]

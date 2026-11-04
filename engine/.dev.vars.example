@@ -1,0 +1,2 @@
+# Your private engine password (12+ random characters). You paste the same value into Tackly > Settings > Data home.
+ENGINE_KEY=

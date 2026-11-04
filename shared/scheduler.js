@@ -1,6 +1,7 @@
 // Auto-scheduler: spreads pins over days with natural, randomised times.
 // Shared by the Worker (server-side auto-schedule) and the browser (preview + demo mode).
 import { zonedToUtc, ymd, addDaysYmd } from './tz.js';
+import { DAILY_PIN_LIMIT, MIN_GAP_MINUTES } from './limits.js';
 
 export const PRESETS = {
   us_peak: {
@@ -101,8 +102,9 @@ export function dayTimes(dayYmd, count, windows, tz, rng, { minGapMin = 20, avoi
 export function autoSchedule(pins, opts, rng = Math.random) {
   const tz = opts.timezone || 'UTC';
   const now = opts.now ?? Date.now();
-  const minPer = Math.max(1, Math.min(opts.minPerDay ?? 3, 50));
-  const maxPer = Math.max(minPer, Math.min(opts.maxPerDay ?? minPer, 50));
+  // Hard cap: never plan more than DAILY_PIN_LIMIT pins per account per day.
+  const minPer = Math.max(1, Math.min(opts.minPerDay ?? 3, DAILY_PIN_LIMIT));
+  const maxPer = Math.max(minPer, Math.min(opts.maxPerDay ?? minPer, DAILY_PIN_LIMIT));
   const windows = opts.windows?.length ? opts.windows : PRESETS.all_day.windows;
   const existing = [...(opts.existing || [])];
   const maxDays = opts.maxDays ?? 365;
@@ -112,8 +114,10 @@ export function autoSchedule(pins, opts, rng = Math.random) {
   const result = [];
   let day = opts.startDate || ymd(now, tz);
   for (let di = 0; queue.length && di < maxDays; di++, day = addDaysYmd(day, 1)) {
-    const wanted = randInt(rng, minPer, maxPer);
-    const times = dayTimes(day, wanted, windows, tz, rng, { minGapMin: opts.minGapMin ?? 20, avoid: existing })
+    const already = existing.filter((t) => ymd(t, tz) === day).length;
+    const wanted = Math.min(randInt(rng, minPer, maxPer), DAILY_PIN_LIMIT - already);
+    if (wanted <= 0) continue;
+    const times = dayTimes(day, wanted, windows, tz, rng, { minGapMin: Math.max(MIN_GAP_MINUTES, opts.minGapMin ?? 20), avoid: existing })
       .filter((t) => t > now + 5 * 60000);
     const usedToday = new Set();
     for (const t of times) {

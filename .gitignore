@@ -6,3 +6,4 @@ dist
 .env
 worker/wrangler.generated.toml
 test-results
+dist-engine

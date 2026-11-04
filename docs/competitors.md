@@ -7,8 +7,8 @@ the most commonly reported ones. Check each vendor's pricing page before quoting
 |---|---|---|---|---|---|
 | Price | **$0, no card** | $0 (paid Pro ≈ $17.99–29.99/mo) | $0 (paid ≈ $5–6 per channel/mo) | $0 | No advertised free plan; paid from ≈ $18.75–25/mo, 14-day trial |
 | Pinterest accounts | 1 | 1 | Up to 3 channels (any network) | 1 (your own) | Per "social set" |
-| Scheduled pins | **Unlimited queue** | ~5 posts / month | 10 queued per channel | ~10 queued at once, ~30 days ahead | Limited per plan |
-| Built-in pin designer | **Yes, 18 premium 1000×1500 templates** | Tailwind Create (limited on free) | No (Canva link) | No | No real pin designer |
+| Scheduled pins | **Unlimited queue (publishes max 10/day per account for safety)** | ~5 posts / month | 10 queued per channel | ~10 queued at once, ~30 days ahead | Limited per plan |
+| Built-in pin designer | **Yes, 21 premium 1000×1500 templates** | Tailwind Create (limited on free) | No (Canva link) | No | No real pin designer |
 | Brand kit (logo, fonts, colours) | **Yes** | Paid | No | No | Paid |
 | AI image generation | **Yes, free (Pollinations) or your own key** | No | No | No | No |
 | AI titles / descriptions / alt text | **Yes, free unlimited* (or your own key)** | 5 AI credits / month | Limited AI assistant | No | Paid |
@@ -32,9 +32,9 @@ the most commonly reported ones. Check each vendor's pricing page before quoting
 4. **Bulk mode and auto-schedule for free.** Competitors keep these behind paid plans.
 5. **Anti-spam spreading.** The same link is automatically spread across different boards and days.
 
-## Where competitors are still ahead (future paid ideas)
+## Where competitors are still ahead
 
-- Multiple Pinterest accounts and team seats (Tailwind, Buffer, Later). This is planned for our paid plan.
+- Multiple Pinterest accounts and team seats (Tailwind, Buffer, Later).
 - Instagram/Facebook cross-posting (Buffer, Later, Tailwind).
 - Tailwind Communities.
 - Deep analytics dashboards.
@@ -47,3 +47,8 @@ name, **Tackly**, avoids both. Quick searches found no existing Pinterest tool c
 Sources: tailwindapp.com, socialk.it/en/pricing/tailwind, socialchamp.com (Tailwind, Buffer, Later pricing),
 socialpilot.co/insights/buffer-pricing, socialbu.com/blog/pinterest-scheduler, postfa.st/blog/how-to-schedule-pinterest-pins,
 buffer.com/resources/schedule-pinterest.
+
+## Update (v2)
+
+Tackly v2 adds Pinterest keyword research, a pin SEO score, a seasonal planner, Rich Pins checks, Canva upload
+(PNG/.zip) with AI SEO copy, and an MCP server for Claude/ChatGPT/Codex. None of the free tiers above offer these.

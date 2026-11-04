@@ -16,11 +16,19 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Worker tests (plan limits, crypto, scheduler, poster)
+      - name: Check no secrets are committed
+        run: node scripts/check-secrets.mjs
+      - name: Check the engine copy of shared code is in sync
+        run: node scripts/sync-engine-shared.mjs --check
+      - name: Tests (relay, engine + MCP, crypto, scheduler, SEO, daily limits)
         run: npm test
       - name: Build website
         run: npm run build
-      - name: Check the Worker bundles
+      - name: Check the relay bundles
         run: npx wrangler deploy --dry-run --outdir /tmp/worker-build --config worker/wrangler.toml
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+      - name: Check the user engine bundles
+        run: npx -y wrangler@4 deploy --dry-run --outdir /tmp/engine-build --config engine/wrangler.toml
         env:
           WRANGLER_SEND_METRICS: 'false'

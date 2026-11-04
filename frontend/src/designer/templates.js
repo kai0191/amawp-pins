@@ -1,5 +1,5 @@
 // Pin templates (1000x1500). Each template draws with the helper toolkit from render.js.
-// tier: 'free' | 'pro'  (pro templates are locked until paid plans launch)
+// All templates are free.
 import { hexA } from './render.js';
 
 const P = 70; // outer padding
@@ -401,9 +401,9 @@ add({
   },
 });
 
-// ---- Pro templates (locked until paid plans launch; users can preview + join the waitlist) ----
+// ---- Editorial templates ----
 add({
-  id: 'magazine', name: 'Magazine Cover', category: 'Pro', tier: 'pro', imageSlots: 1,
+  id: 'magazine', name: 'Magazine Cover', category: 'Editorial', imageSlots: 1,
   fields: ['brandName', 'kicker', 'headline', 'items'],
   defaults: { brandName: 'HOME', kicker: 'Autumn issue', headline: 'The Calm Home Edit', items: ['12 reading nooks', 'Paint colours we love', 'Budget lighting'] },
   draw(h) {
@@ -419,7 +419,7 @@ add({
   },
 });
 add({
-  id: 'editorial-arch', name: 'Editorial Arch', category: 'Pro', tier: 'pro', imageSlots: 1,
+  id: 'editorial-arch', name: 'Editorial Arch', category: 'Editorial', imageSlots: 1,
   fields: ['kicker', 'headline', 'subhead'],
   defaults: { kicker: 'Slow living', headline: 'A Gentle Morning Routine', subhead: 'Seven habits for calmer days' },
   draw(h) {
@@ -433,7 +433,7 @@ add({
   },
 });
 add({
-  id: 'gradient-poster', name: 'Gradient Poster', category: 'Pro', tier: 'pro',
+  id: 'gradient-poster', name: 'Gradient Poster', category: 'Editorial',
   fields: ['kicker', 'headline', 'subhead', 'cta'],
   defaults: { kicker: 'Free download', headline: 'The 2026 Content Planner', subhead: 'Plan a whole year of pins in one afternoon', cta: 'Get it free' },
   draw(h) {

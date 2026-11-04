@@ -1,5 +1,5 @@
 // Image loading (CORS-safe for canvas export), uploads and free stock photo search.
-import { getApiBase, getToken } from './config.js';
+import { getRelayBase } from './config.js';
 
 const cache = new Map();
 
@@ -15,12 +15,9 @@ function tryLoad(src, cors = true) {
 }
 
 async function viaWorker(src) {
-  const base = getApiBase();
-  const token = getToken();
-  if (!base || !token) throw new Error('no proxy');
-  const res = await fetch(`${base}/api/img?url=${encodeURIComponent(src)}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error('proxy failed');
-  return tryLoad(URL.createObjectURL(await res.blob()), false);
+  const base = getRelayBase();
+  if (!base || !/^https?:/.test(src)) throw new Error('no proxy');
+  return tryLoad(`${base}/api/img?url=${encodeURIComponent(src)}`);
 }
 
 /** Loads an image so it can be drawn on a canvas and exported (tries direct CORS, our Worker proxy, then wsrv.nl). */

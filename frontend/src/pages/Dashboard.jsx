@@ -2,42 +2,49 @@ import { useEffect, useState } from 'preact/hooks';
 import { Icon } from '../components.jsx';
 import { api } from '../lib/api.js';
 import { useStore, userTz } from '../lib/store.js';
-import { refreshMe } from '../lib/data.js';
+import { refreshMe, loadAccounts } from '../lib/data.js';
 import { fmtDateTime, relative } from '../lib/time.js';
+import { seasonsToPinNow, RANKING_TIPS } from '../../../shared/seo.js';
+import { DAILY_PIN_LIMIT } from '../../../shared/limits.js';
 
 export function Dashboard() {
   const s = useStore();
-  const u = s.user;
-  const tz = userTz(u);
+  const tz = userTz();
   const [next, setNext] = useState(null);
+  const [quota, setQuota] = useState(null);
   useEffect(() => {
     refreshMe().catch(() => {});
     api.pins().then((p) => setNext(p.filter((x) => x.status === 'scheduled').sort((a, b) => a.scheduled_at - b.scheduled_at).slice(0, 5))).catch(() => setNext([]));
+    loadAccounts().then((a) => a[0] && api.quota(a[0].id)).then((q) => q && setQuota(q)).catch(() => {});
   }, []);
-  const usage = u?.usage || {};
+  const o = s.overview || {};
+  const seasons = seasonsToPinNow().slice(0, 3);
+  const tip = RANKING_TIPS[new Date().getDate() % RANKING_TIPS.length];
   const steps = [
-    ['Connect your Pinterest account', usage.accounts > 0, '#/app/accounts'],
-    ['Set up your brand kit', !!u?.settings?.brandKit?.website || !!u?.settings?.brandKit?.logo, '#/app/settings'],
-    ['Design your first pin', (usage.drafts || 0) + (usage.scheduled || 0) + (usage.posted || 0) > 0, '#/app/design'],
-    ['Schedule a week of pins', (usage.scheduled || 0) >= 7 || (usage.posted || 0) >= 7, '#/app/schedule'],
+    ['Connect your Pinterest account', o.accounts > 0, '#/app/accounts'],
+    ['Set up your brand kit', !!(s.profile?.brandKit?.website || s.profile?.brandKit?.logo), '#/app/settings'],
+    ['Find keywords for your niche', !!localStorage.getItem('tackly.pref.seoKeywords'), '#/app/seo'],
+    ['Design your first pin', (o.drafts || 0) + (o.scheduled || 0) + (o.posted || 0) > 0, '#/app/design'],
+    ['Schedule a week of pins', (o.scheduled || 0) >= 7 || (o.posted || 0) >= 7, '#/app/schedule'],
   ];
   const done = steps.filter((x) => x[1]).length;
   return (
     <div class="stack lg">
       <div>
-        <h2 style={{ marginBottom: 4 }}>Hi {u?.name || 'there'} 👋</h2>
-        <p class="muted" style={{ margin: 0 }}>Here’s your Pinterest at a glance.</p>
+        <h2 style={{ marginBottom: 4 }}>{s.profile?.name ? `Hi ${s.profile.name} 👋` : 'Welcome to Tackly 👋'}</h2>
+        <p class="muted" style={{ margin: 0 }}>Design pins people search for, then let Tackly post them at natural times.</p>
       </div>
       <div class="stat-grid">
-        <div class="stat"><div class="n">{usage.scheduled || 0}</div><div class="l">Scheduled</div></div>
-        <div class="stat"><div class="n">{usage.posted || 0}</div><div class="l">Posted</div></div>
-        <div class="stat"><div class="n">{usage.drafts || 0}</div><div class="l">Drafts</div></div>
-        <div class="stat"><div class="n" style={{ color: usage.failed ? 'var(--danger)' : undefined }}>{usage.failed || 0}</div><div class="l">Need attention</div></div>
+        <div class="stat"><div class="n">{o.scheduled || 0}</div><div class="l">Scheduled</div></div>
+        <div class="stat"><div class="n">{o.posted || 0}</div><div class="l">Posted</div></div>
+        <div class="stat"><div class="n">{o.drafts || 0}</div><div class="l">Drafts</div></div>
+        <div class="stat"><div class="n">{quota ? `${quota.used}/${quota.limit}` : `0/${DAILY_PIN_LIMIT}`}</div><div class="l">Published in last 24h</div></div>
       </div>
+      {o.needs_render > 0 && <div class="notice">🤖 {o.needs_render} AI-designed pin{o.needs_render > 1 ? 's are' : ' is'} waiting to be rendered. <a href="#/app/schedule?view=drafts">Render now</a></div>}
       <div class="quick">
-        <a href="#/app/design"><div class="ico">🎨</div><b>Design a pin</b><div class="small muted">Pick from 18 premium templates</div></a>
-        <a href="#/app/bulk"><div class="ico">⚡</div><b>Bulk create</b><div class="small muted">Turn a list of links into pins</div></a>
-        <a href="#/app/schedule?view=drafts"><div class="ico">🗓️</div><b>Auto-schedule</b><div class="small muted">Spread drafts over natural times</div></a>
+        <a href="#/app/design"><div class="ico">🎨</div><b>Design a pin</b><div class="small muted">21 premium templates, all free</div></a>
+        <a href="#/app/seo"><div class="ico">🔎</div><b>Keyword research</b><div class="small muted">Find what people search on Pinterest</div></a>
+        <a href="#/app/bulk"><div class="ico">⚡</div><b>Bulk create</b><div class="small muted">Links, CSV or Canva exports → pins</div></a>
       </div>
       <div class="grid-2" style={{ alignItems: 'start' }}>
         <div class="card stack">
@@ -61,6 +68,24 @@ export function Dashboard() {
               </div>
             </div>
           )) : <p class="muted small" style={{ margin: 0 }}>Nothing scheduled yet. <a href="#/app/design">Design a pin</a> to get started.</p>}
+        </div>
+      </div>
+      <div class="grid-2" style={{ alignItems: 'start' }}>
+        <div class="card stack">
+          <h3 style={{ margin: 0 }}>Pin these now 📅</h3>
+          <p class="small muted" style={{ margin: 0 }}>Pinterest users search 1–3 months ahead. These seasons are open right now:</p>
+          {seasons.map((x) => (
+            <div key={x.name} class="stack" style={{ gap: 4 }}>
+              <div class="row between"><b>{x.name}</b><span class={`chip ${x.urgency === 'last call' ? 'danger' : x.urgency === 'now' ? 'warn' : 'primary'}`}>{x.daysUntil} days</span></div>
+              <div class="row" style={{ gap: 6 }}>{x.keywords.map((k) => <a key={k} class="chip" href={`#/app/seo?q=${encodeURIComponent(k)}`}>{k}</a>)}</div>
+            </div>
+          ))}
+        </div>
+        <div class="card stack">
+          <h3 style={{ margin: 0 }}>Today’s Pinterest SEO tip 💡</h3>
+          <b>{tip[0]}</b>
+          <p class="muted small" style={{ margin: 0 }}>{tip[1]}</p>
+          <a class="small" href="#/app/seo?tab=secrets">See all ranking tips →</a>
         </div>
       </div>
     </div>

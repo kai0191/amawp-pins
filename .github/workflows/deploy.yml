@@ -1,0 +1,176 @@
+name: Deploy
+
+# Runs on every push to main. It:
+#   1. tests the Worker,
+#   2. deploys the Cloudflare Worker (only if the Cloudflare secrets are set; otherwise skips cleanly),
+#   3. builds the website and publishes it to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  WRANGLER_SEND_METRICS: 'false'
+  NODE_VERSION: '22'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  worker:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check Cloudflare secrets
+        id: check
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Worker deploy skipped::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to turn on the backend (see docs/SETUP.md). The website will run in demo mode until then."
+            echo "### Backend not deployed yet" >> "$GITHUB_STEP_SUMMARY"
+            echo "Cloudflare secrets are not set, so the Worker deploy was skipped and the site runs in **demo mode**. Follow docs/SETUP.md to switch it on." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.ready == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+        if: steps.check.outputs.ready == 'true'
+      - name: Create D1 database and KV namespace (first run only)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          W="npx wrangler"
+          D1_ID=$($W d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s.slice(s.indexOf("[")));const x=a.find(d=>d.name==="tackly-db");process.stdout.write(x?x.uuid:"")})')
+          if [ -z "$D1_ID" ]; then
+            $W d1 create tackly-db
+            D1_ID=$($W d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s.slice(s.indexOf("[")));process.stdout.write(a.find(d=>d.name==="tackly-db").uuid)})')
+          fi
+          KV_ID=$($W kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s.slice(s.indexOf("[")));const x=a.find(n=>n.title==="tackly-api-KV"||n.title==="tackly-kv");process.stdout.write(x?x.id:"")})')
+          if [ -z "$KV_ID" ]; then
+            $W kv namespace create KV --config worker/wrangler.toml || true
+            KV_ID=$($W kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s.slice(s.indexOf("[")));const x=a.find(n=>n.title==="tackly-api-KV"||n.title==="tackly-kv");process.stdout.write(x?x.id:"")})')
+          fi
+          test -n "$D1_ID" && test -n "$KV_ID"
+          sed -i "s/__D1_DATABASE_ID__/$D1_ID/; s/__KV_NAMESPACE_ID__/$KV_ID/" worker/wrangler.toml
+          echo "D1: $D1_ID  KV: $KV_ID"
+      - name: Apply database migrations
+        if: steps.check.outputs.ready == 'true'
+        run: npx wrangler d1 migrations apply DB --remote --config worker/wrangler.toml
+      - name: Deploy Worker
+        id: deploy
+        if: steps.check.outputs.ready == 'true'
+        env:
+          OWNER_EMAIL: ${{ vars.OWNER_EMAIL }}
+          PINTEREST_SANDBOX: ${{ vars.PINTEREST_SANDBOX || 'false' }}
+          APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config worker/wrangler.toml \
+            --var "OWNER_EMAIL:${OWNER_EMAIL}" --var "PINTEREST_SANDBOX:${PINTEREST_SANDBOX}" --var "APP_URL:${APP_URL}" | tee deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### Backend deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Worker URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pinterest redirect URI to add in your Pinterest app: \`$URL/api/pinterest/callback\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Worker secrets
+        if: steps.check.outputs.ready == 'true'
+        env:
+          PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+          PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENC_KEY: ${{ secrets.ENC_KEY }}
+        run: |
+          node -e '
+            const keys = ["PINTEREST_APP_ID","PINTEREST_APP_SECRET","JWT_SECRET","ENC_KEY"];
+            const out = {};
+            for (const k of keys) if (process.env[k]) out[k] = process.env[k];
+            require("fs").writeFileSync(process.env.RUNNER_TEMP + "/secrets.json", JSON.stringify(out));
+            console.log("Uploading:", Object.keys(out).join(", ") || "(none)");
+          '
+          if [ "$(cat "$RUNNER_TEMP/secrets.json")" != "{}" ]; then
+            npx wrangler secret bulk "$RUNNER_TEMP/secrets.json" --config worker/wrangler.toml
+          fi
+          rm -f "$RUNNER_TEMP/secrets.json"
+
+  pages:
+    needs: [test, worker]
+    if: always() && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Build website
+        env:
+          VITE_API_BASE: ${{ needs.worker.outputs.url || vars.API_BASE }}
+          VITE_CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: |
+          npm run build
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+          echo "API base baked into the site: ${VITE_API_BASE:-(none, demo mode)}"
+      - name: Turn on GitHub Pages (Actions source)
+        id: pages
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outcome == 'success'
+        with:
+          path: dist
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.pages.outcome == 'success'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Fallback - publish to the gh-pages branch
+        if: steps.pages.outcome != 'success' || steps.deployment.outcome != 'success'
+        run: |
+          cd dist
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy site from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          echo "### Website published to the gh-pages branch" >> "$GITHUB_STEP_SUMMARY"
+          echo "GitHub Pages could not be switched on automatically. One click fixes it: repository **Settings → Pages → Build and deployment → Source: GitHub Actions** (or 'Deploy from a branch' → gh-pages). See docs/SETUP.md." >> "$GITHUB_STEP_SUMMARY"
+      - name: Summary
+        run: |
+          echo "### Website" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> "$GITHUB_STEP_SUMMARY"

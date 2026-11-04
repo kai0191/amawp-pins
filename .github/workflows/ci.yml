@@ -1,0 +1,26 @@
+name: CI
+
+# Tests the Worker and builds the website on every pull request and on pushes to feature branches.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main, gh-pages]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Worker tests (plan limits, crypto, scheduler, poster)
+        run: npm test
+      - name: Build website
+        run: npm run build
+      - name: Check the Worker bundles
+        run: npx wrangler deploy --dry-run --outdir /tmp/worker-build --config worker/wrangler.toml
+        env:
+          WRANGLER_SEND_METRICS: 'false'

@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development only. Never commit real values.
+PINTEREST_APP_ID=
+PINTEREST_APP_SECRET=
+JWT_SECRET=local-dev-jwt-secret-change-me
+ENC_KEY=local-dev-enc-key-change-me

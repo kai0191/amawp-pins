@@ -1,0 +1,8 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+*.log
+.env
+worker/wrangler.generated.toml
+test-results

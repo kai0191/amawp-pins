@@ -1,0 +1,26 @@
+# Tackly by AMAWP: Cloudflare Worker config.
+# The deploy workflow fills in the two __..._ID__ placeholders automatically
+# (it creates the D1 database and KV namespace on first deploy). Do not put secrets here.
+name = "tackly-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[vars]
+APP_URL = "https://kai0191.github.io/amawp-pins/"
+OWNER_EMAIL = ""
+PINTEREST_SANDBOX = "false"
+ALLOWED_ORIGINS = "https://kai0191.github.io,http://localhost:5173,http://localhost:4173"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tackly-db"
+database_id = "__D1_DATABASE_ID__"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "__KV_NAMESPACE_ID__"
+
+[triggers]
+crons = ["*/5 * * * *"]

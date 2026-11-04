@@ -39,7 +39,7 @@ function DataHome() {
     try {
       const u = url.trim().replace(/\/+$/, '');
       await testEngine(u, key.trim());
-      const localData = await (await import('../lib/api.js')).api.exportAll().catch(() => null);
+      const localData = await api.exportAll().catch(() => null);
       setDataHome({ mode: 'engine', url: u, key: key.trim() });
       const res = await initApi();
       setState({ home: res.home, engineError: res.engineError });

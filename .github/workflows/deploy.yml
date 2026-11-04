@@ -152,8 +152,8 @@ jobs:
           npm run build
           cp dist/index.html dist/404.html
           # Single-file engine for users who paste it into the Cloudflare dashboard (docs/ENGINE.md, option B)
-          npx -y wrangler@4 deploy --dry-run --outdir dist-engine --config engine/wrangler.toml
-          mkdir -p dist/engine && cp dist-engine/index.js dist/engine/tackly-engine.js
+          npx -y wrangler@4 deploy --dry-run --outdir "$PWD/dist-engine" --config engine/wrangler.toml
+          mkdir -p dist/engine && cp "$PWD/dist-engine/index.js" dist/engine/tackly-engine.js
           touch dist/.nojekyll
           echo "API base baked into the site: ${VITE_API_BASE:-(none, demo mode)}"
       - name: Turn on GitHub Pages (Actions source)

@@ -353,9 +353,11 @@ table.data th { font-size: 12px; color: var(--faint); text-transform: uppercase;
   .hero-art { height: 400px; max-width: 520px; margin: 0 auto; width: 100%; }
   .hero-art canvas { width: 34% !important; }
   .feature-grid, .pricing { grid-template-columns: 1fr 1fr; }
-  .designer { grid-template-columns: 1fr; }
-  .stage { position: static; }
-  .tpl-grid { grid-template-columns: repeat(4, 1fr); max-height: none; }
+  .designer { grid-template-columns: minmax(0, 1fr); }
+  .designer > * { min-width: 0; }
+  .stage { position: static; order: -1; }
+  .tpl-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 132px; max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+  .tpl { scroll-snap-align: start; }
 }
 @media (max-width: 760px) {
   body { font-size: 15px; }
@@ -375,7 +377,9 @@ table.data th { font-size: 12px; color: var(--faint); text-transform: uppercase;
   .bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10.5px; font-weight: 600; color: var(--muted); padding: 4px 6px; border-radius: 10px; text-decoration: none; min-width: 52px; }
   .bottom-nav a.active { color: var(--primary); }
   .bottom-nav .ni { font-size: 19px; }
-  .tpl-grid { grid-template-columns: repeat(3, 1fr); }
+  .tpl-grid { grid-auto-columns: 104px; }
+  .stage-canvas { width: min(100%, 340px); }
+  .demo-banner { font-size: 12px; padding: 6px 16px; }
   .cal .day { min-height: 74px; padding: 3px; }
   .cal-pin .t { display: none; }
   .cal-pin { justify-content: center; padding: 2px; }
